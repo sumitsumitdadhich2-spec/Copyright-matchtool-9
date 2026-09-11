@@ -30,6 +30,7 @@ jobs:
       - name: Install Mobile Dependencies
         run: |
           cd mobile
+          flutter clean
           flutter pub get
 
       - name: Build Android APK (Release)
