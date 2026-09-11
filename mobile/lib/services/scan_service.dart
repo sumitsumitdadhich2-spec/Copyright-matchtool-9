@@ -289,8 +289,8 @@ class ScanService extends ChangeNotifier {
       final verifyDir = Directory(p.join(workDir, 'verify'));
       if (!await verifyDir.exists()) await verifyDir.create(recursive: true);
 
-      final shortClip = p.join(verifyDir, 'verify_short_${match.chunkIndex}_${match.shortStart.toInt()}.mp4');
-      final movieClip = p.join(verifyDir, 'verify_movie_${match.chunkIndex}_${match.movieStart.toInt()}.mp4');
+      final shortClip = p.join(verifyDir.path, 'verify_short_${match.chunkIndex}_${match.shortStart.toInt()}.mp4');
+      final movieClip = p.join(verifyDir.path, 'verify_movie_${match.chunkIndex}_${match.movieStart.toInt()}.mp4');
 
       // Extract short clip with 0.5s padding
       final sStart = (match.shortStart - 0.25).clamp(0.0, 36000.0);
