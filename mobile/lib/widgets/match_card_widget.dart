@@ -9,7 +9,9 @@ class MatchCardWidget extends StatelessWidget {
   final VoidCallback? onPlayMovie;
   final VoidCallback? onCompare;
   final VoidCallback? onVerify;
+  final VoidCallback? onRescan;
   final bool isVerifying;
+  final bool isRescanning;
 
   const MatchCardWidget({
     super.key,
@@ -19,7 +21,9 @@ class MatchCardWidget extends StatelessWidget {
     this.onPlayMovie,
     this.onCompare,
     this.onVerify,
+    this.onRescan,
     this.isVerifying = false,
+    this.isRescanning = false,
   });
 
   @override
@@ -197,7 +201,7 @@ class MatchCardWidget extends StatelessWidget {
               if (onVerify != null && match.verified == null)
                 IconButton(
                   onPressed: isVerifying ? null : onVerify,
-                  tooltip: 'Verify match with AI',
+                  tooltip: 'Verify with 3.5-shiva-lite (24fps)',
                   icon: isVerifying
                       ? const SizedBox(
                           width: 16,
@@ -205,6 +209,18 @@ class MatchCardWidget extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.fact_check_outlined, size: 20, color: Color(0xFFF59E0B)),
+                ),
+              if (onRescan != null)
+                IconButton(
+                  onPressed: isRescanning ? null : onRescan,
+                  tooltip: 'Deep 24fps Rescan with 3-shiva-preview',
+                  icon: isRescanning
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF818CF8)),
+                        )
+                      : const Icon(Icons.radar_outlined, size: 20, color: Color(0xFF818CF8)),
                 ),
             ],
           ),
@@ -214,7 +230,51 @@ class MatchCardWidget extends StatelessWidget {
   }
 
   Widget _buildVerificationBadge() {
-    if (match.verified == true) {
+    if (match.rescanStatus == 'running') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFF6366F1).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.4)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF818CF8)),
+            ),
+            SizedBox(width: 5),
+            Text(
+              'RESCANNING...',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF818CF8)),
+            ),
+          ],
+        ),
+      );
+    } else if (match.rescanStatus == 'found') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFF6366F1).withOpacity(0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.4)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.radar, size: 12, color: Color(0xFF818CF8)),
+            SizedBox(width: 4),
+            Text(
+              'RESCAN CONFIRMED',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF818CF8)),
+            ),
+          ],
+        ),
+      );
+    } else if (match.verified == true) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(

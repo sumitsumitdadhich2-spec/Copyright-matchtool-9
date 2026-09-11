@@ -18,6 +18,7 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   int? _verifyingIndex;
+  int? _rescanningIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +148,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 match: match,
                 index: i,
                 isVerifying: _verifyingIndex == i,
+                isRescanning: _rescanningIndex == i,
                 onPlayShort: () {
                   Navigator.push(
                     context,
@@ -182,6 +184,24 @@ class _ScanScreenState extends State<ScanScreen> {
                               : 'Verifier verdict: DIFFERENT footage.',
                         ),
                         backgroundColor: success ? const Color(0xFF22C55E) : Colors.redAccent,
+                      ),
+                    );
+                  }
+                },
+                onRescan: () async {
+                  setState(() => _rescanningIndex = i);
+                  await scanService.rescanCandidate(match);
+                  if (mounted) {
+                    setState(() => _rescanningIndex = null);
+                    final isFound = match.rescanStatus == 'found';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          isFound
+                              ? 'Rescan confirmed true match in chunk!'
+                              : 'Rescan: Target segment not found in this chunk.',
+                        ),
+                        backgroundColor: isFound ? const Color(0xFF6366F1) : Colors.amber.shade800,
                       ),
                     );
                   }

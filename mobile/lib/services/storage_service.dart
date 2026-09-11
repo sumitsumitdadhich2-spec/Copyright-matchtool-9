@@ -57,6 +57,14 @@ class StorageService extends ChangeNotifier {
     }
   }
 
+  Future<void> updateScanName(String scanId, String customName) async {
+    final index = _savedScans.indexWhere((s) => s.id == scanId);
+    if (index >= 0) {
+      _savedScans[index].customName = customName.trim();
+      await saveScan(_savedScans[index]);
+    }
+  }
+
   Future<void> loadScans() async {
     try {
       if (_scansDir == null || !await _scansDir!.exists()) return;
@@ -94,6 +102,19 @@ class StorageService extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('[StorageService] Error deleting scan: $e');
+    }
+  }
+
+  Future<void> clearAllScans() async {
+    try {
+      if (_scansDir != null && await _scansDir!.exists()) {
+        await _scansDir!.delete(recursive: true);
+        await _scansDir!.create(recursive: true);
+      }
+      _savedScans.clear();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[StorageService] Error clearing all scans: $e');
     }
   }
 

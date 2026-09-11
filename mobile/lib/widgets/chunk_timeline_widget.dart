@@ -1,23 +1,32 @@
 import 'package:flutter/material.dart';
 import '../models/chunk.dart';
 
-class ChunkTimelineWidget extends StatelessWidget {
+class ChunkTimelineWidget extends StatefulWidget {
   final List<ChunkState> chunks;
+  final int totalShortMinutes;
   final Function(int chunkIndex)? onChunkTap;
   final Function(int chunkIndex)? onRetryChunk;
 
   const ChunkTimelineWidget({
     super.key,
     required this.chunks,
+    this.totalShortMinutes = 1,
     this.onChunkTap,
     this.onRetryChunk,
   });
 
   @override
+  State<ChunkTimelineWidget> createState() => _ChunkTimelineWidgetState();
+}
+
+class _ChunkTimelineWidgetState extends State<ChunkTimelineWidget> {
+  int _selectedShortMin = 0;
+
+  @override
   Widget build(BuildContext context) {
-    if (chunks.isEmpty) {
+    if (widget.chunks.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: const Color(0xFF161616),
           borderRadius: BorderRadius.circular(12),
@@ -26,18 +35,21 @@ class ChunkTimelineWidget extends StatelessWidget {
         child: const Center(
           child: Text(
             'Timeline will populate once movie chunking starts.',
-            style: TextStyle(color: Colors.white60, fontSize: 13),
+            style: TextStyle(color: Colors.white60, fontSize: 12),
           ),
         ),
       );
     }
 
+    final done = widget.chunks.where((c) => c.status == ChunkStatus.done).length;
+    final matchCount = widget.chunks.where((c) => c.matches.isNotEmpty).length;
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: const Color(0xFF18181B),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF2E2E2E)),
+        border: Border.all(color: Colors.white12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -45,29 +57,82 @@ class ChunkTimelineWidget extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Chunk Timeline',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
               Row(
                 children: [
-                  _legendItem('Match', const Color(0xFF22C55E)),
+                  const Icon(Icons.view_timeline_outlined, color: Color(0xFF38BDF8), size: 18),
                   const SizedBox(width: 8),
-                  _legendItem('Scanning', const Color(0xFF6366F1)),
-                  const SizedBox(width: 8),
-                  _legendItem('No Match', const Color(0xFF333333)),
-                  const SizedBox(width: 8),
-                  _legendItem('Failed', const Color(0xFFEF4444)),
+                  const Text(
+                    'Scan Timeline',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  if (widget.totalShortMinutes > 1) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF38BDF8).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Min ${_selectedShortMin + 1}/${widget.totalShortMinutes}',
+                        style: const TextStyle(fontSize: 9, color: Color(0xFF38BDF8), fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ],
+              ),
+              Text(
+                '$done/${widget.chunks.length} chunks',
+                style: const TextStyle(fontSize: 11, color: Colors.white60, fontFamily: 'monospace'),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+
+          // Short Multi-Minute Tabs (if short video > 60s)
+          if (widget.totalShortMinutes > 1) ...[
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(widget.totalShortMinutes, (i) {
+                  final isSel = i == _selectedShortMin;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text('Short Min ${i + 1}', style: const TextStyle(fontSize: 11)),
+                      selected: isSel,
+                      onSelected: (_) => setState(() => _selectedShortMin = i),
+                      selectedColor: const Color(0xFF38BDF8).withOpacity(0.2),
+                      checkmarkColor: const Color(0xFF38BDF8),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 10),
+
+          // Legend
+          Row(
+            children: [
+              _legendItem('Match ($matchCount)', const Color(0xFF22C55E)),
+              const SizedBox(width: 10),
+              _legendItem('Scanning', const Color(0xFF38BDF8)),
+              const SizedBox(width: 10),
+              _legendItem('No Match', const Color(0xFF3F3F46)),
+              const SizedBox(width: 10),
+              _legendItem('Error', const Color(0xFFEF4444)),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Grid of 60s Chunks
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: List.generate(chunks.length, (index) {
-              final chunk = chunks[index];
+            spacing: 5,
+            runSpacing: 5,
+            children: List.generate(widget.chunks.length, (index) {
+              final chunk = widget.chunks[index];
               return _buildChunkTile(context, chunk);
             }),
           ),
@@ -98,135 +163,64 @@ class ChunkTimelineWidget extends StatelessWidget {
   }
 
   Widget _buildChunkTile(BuildContext context, ChunkState chunk) {
-    Color bg;
-    Color border;
+    Color bg = const Color(0xFF27272A);
+    Color border = Colors.transparent;
     Widget? icon;
 
     switch (chunk.status) {
-      case ChunkStatus.match:
-        bg = const Color(0xFF22C55E).withOpacity(0.25);
-        border = const Color(0xFF22C55E);
-        icon = const Icon(Icons.check, size: 10, color: Color(0xFF22C55E));
+      case ChunkStatus.pending:
+        bg = const Color(0xFF27272A);
         break;
       case ChunkStatus.scanning:
-        bg = const Color(0xFF6366F1).withOpacity(0.3);
-        border = const Color(0xFF6366F1);
+        bg = const Color(0xFF38BDF8).withOpacity(0.2);
+        border = const Color(0xFF38BDF8);
         icon = const SizedBox(
           width: 8,
           height: 8,
-          child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white),
+          child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF38BDF8)),
         );
         break;
-      case ChunkStatus.failed:
-        bg = const Color(0xFFEF4444).withOpacity(0.25);
+      case ChunkStatus.done:
+        if (chunk.matches.isNotEmpty) {
+          bg = const Color(0xFF22C55E);
+          icon = const Icon(Icons.check, size: 10, color: Colors.black);
+        } else {
+          bg = const Color(0xFF3F3F46);
+        }
+        break;
+      case ChunkStatus.error:
+        bg = const Color(0xFFEF4444).withOpacity(0.3);
         border = const Color(0xFFEF4444);
-        icon = const Icon(Icons.refresh, size: 10, color: Color(0xFFEF4444));
+        icon = const Icon(Icons.priority_high, size: 10, color: Color(0xFFEF4444));
         break;
-      case ChunkStatus.noMatch:
-        bg = const Color(0xFF262626);
-        border = const Color(0xFF383838);
-        break;
-      case ChunkStatus.pending:
-      default:
-        bg = const Color(0xFF1A1A1A);
-        border = const Color(0xFF2A2A2A);
     }
 
-    final chunkMinute = chunk.index;
-
-    return InkWell(
-      onTap: () {
-        if (chunk.status == ChunkStatus.failed && onRetryChunk != null) {
-          onRetryChunk!(chunk.index);
-        } else if (onChunkTap != null) {
-          onChunkTap!(chunk.index);
-        } else {
-          _showChunkDetailsDialog(context, chunk);
-        }
-      },
-      borderRadius: BorderRadius.circular(6),
-      child: Tooltip(
-        message: 'Chunk #${chunk.index + 1} (${chunkMinute}m-${chunkMinute + 1}m): ${chunk.status.name}',
+    return Tooltip(
+      message: 'Minute #${chunk.index + 1} (${chunk.status.name})',
+      child: InkWell(
+        onTap: () => widget.onChunkTap?.call(chunk.index),
+        borderRadius: BorderRadius.circular(4),
         child: Container(
-          width: 38,
+          width: 32,
           height: 32,
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(color: border, width: 1),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '${chunk.index + 1}',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              if (icon != null) icon,
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showChunkDetailsDialog(BuildContext context, ChunkState chunk) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: Text('Chunk #${chunk.index + 1} (${chunk.index}m - ${chunk.index + 1}m)'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Status: ${chunk.status.name.toUpperCase()}'),
-              const SizedBox(height: 6),
-              Text('Attempts: ${chunk.attempts}'),
-              const SizedBox(height: 6),
-              Text('Matches Found: ${chunk.matches.length}'),
-              if (chunk.error != null) ...[
-                const SizedBox(height: 12),
-                const Text('Error:', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                Text(chunk.error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
-              ],
-              if (chunk.rawOutput != null && chunk.rawOutput!.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text('Gemini Raw Output:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    chunk.rawOutput!,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+          child: Center(
+            child: icon ??
+                Text(
+                  '${chunk.index + 1}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontFamily: 'monospace',
                   ),
                 ),
-              ],
-            ],
           ),
         ),
-        actions: [
-          if (chunk.status == ChunkStatus.failed && onRetryChunk != null)
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                onRetryChunk!(chunk.index);
-              },
-              child: const Text('Retry Chunk'),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
