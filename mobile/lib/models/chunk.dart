@@ -54,6 +54,30 @@ class ChunkState {
   );
 }
 
+class UserPick {
+  final int index;
+  final bool viaRescan;
+  final int at;
+
+  UserPick({
+    required this.index,
+    required this.viaRescan,
+    required this.at,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'index': index,
+    'viaRescan': viaRescan,
+    'at': at,
+  };
+
+  factory UserPick.fromJson(Map<String, dynamic> json) => UserPick(
+    index: json['index'] as int? ?? 0,
+    viaRescan: json['viaRescan'] as bool? ?? false,
+    at: json['at'] as int? ?? 0,
+  );
+}
+
 class CandidateEntry {
   final String id;
   final double movieStart;
@@ -67,6 +91,19 @@ class CandidateEntry {
   String? rescanStatus; // 'none' | 'running' | 'found' | 'not_found'
   double? rescanMovieStart;
   double? rescanMovieEnd;
+  String? source;
+  int? rank;
+  bool? userPick;
+  String? batchVerified;
+  String? batchVerifierReason;
+  String? batchCropPosition;
+  String? batchProof;
+  bool? rescanRequired;
+  double? shortStart;
+  double? shortEnd;
+  bool? rejected;
+  String? verdict;
+  String? reason;
 
   CandidateEntry({
     required this.id,
@@ -81,6 +118,19 @@ class CandidateEntry {
     this.rescanStatus = 'none',
     this.rescanMovieStart,
     this.rescanMovieEnd,
+    this.source,
+    this.rank,
+    this.userPick,
+    this.batchVerified,
+    this.batchVerifierReason,
+    this.batchCropPosition,
+    this.batchProof,
+    this.rescanRequired,
+    this.shortStart,
+    this.shortEnd,
+    this.rejected,
+    this.verdict,
+    this.reason,
   });
 
   Map<String, dynamic> toJson() => {
@@ -96,6 +146,19 @@ class CandidateEntry {
     'rescanStatus': rescanStatus,
     'rescanMovieStart': rescanMovieStart,
     'rescanMovieEnd': rescanMovieEnd,
+    'source': source,
+    'rank': rank,
+    'userPick': userPick,
+    'batchVerified': batchVerified,
+    'batchVerifierReason': batchVerifierReason,
+    'batchCropPosition': batchCropPosition,
+    'batchProof': batchProof,
+    'rescanRequired': rescanRequired,
+    'shortStart': shortStart,
+    'shortEnd': shortEnd,
+    'rejected': rejected,
+    'verdict': verdict,
+    'reason': reason,
   };
 
   factory CandidateEntry.fromJson(Map<String, dynamic> json) => CandidateEntry(
@@ -111,6 +174,19 @@ class CandidateEntry {
     rescanStatus: json['rescanStatus'] as String? ?? 'none',
     rescanMovieStart: (json['rescanMovieStart'] as num?)?.toDouble(),
     rescanMovieEnd: (json['rescanMovieEnd'] as num?)?.toDouble(),
+    source: json['source'] as String?,
+    rank: json['rank'] as int?,
+    userPick: json['userPick'] as bool?,
+    batchVerified: json['batchVerified'] as String?,
+    batchVerifierReason: json['batchVerifierReason'] as String?,
+    batchCropPosition: json['batchCropPosition'] as String?,
+    batchProof: json['batchProof'] as String?,
+    rescanRequired: json['rescanRequired'] as bool?,
+    shortStart: (json['shortStart'] as num?)?.toDouble(),
+    shortEnd: (json['shortEnd'] as num?)?.toDouble(),
+    rejected: json['rejected'] as bool?,
+    verdict: json['verdict'] as String?,
+    reason: json['reason'] as String?,
   );
 }
 
@@ -120,7 +196,16 @@ class CandidateGroup {
   final double shortEnd;
   List<CandidateEntry> candidates;
   int selectedCandidateIndex;
-  String status; // 'pending' | 'verified' | 'rejected' | 'rescanning' | 'rescan_found'
+  String status; // 'pending' | 'verified' | 'rejected' | 'rescanning' | 'rescan_found' | 'confirmed'
+  String? userPickId;
+  String? confirmedMatchId;
+  String? state;
+  String? origin;
+  dynamic userPick;
+  String? originWindow;
+  int? confirmedIndex;
+  bool? confirmedViaRescan;
+  int? attempts;
 
   CandidateGroup({
     required this.id,
@@ -129,6 +214,15 @@ class CandidateGroup {
     required this.candidates,
     this.selectedCandidateIndex = 0,
     this.status = 'pending',
+    this.userPickId,
+    this.confirmedMatchId,
+    this.state,
+    this.origin,
+    this.userPick,
+    this.originWindow,
+    this.confirmedIndex,
+    this.confirmedViaRescan,
+    this.attempts,
   });
 
   CandidateEntry? get selectedCandidate =>
@@ -145,6 +239,15 @@ class CandidateGroup {
     'candidates': candidates.map((c) => c.toJson()).toList(),
     'selectedCandidateIndex': selectedCandidateIndex,
     'status': status,
+    'userPickId': userPickId,
+    'confirmedMatchId': confirmedMatchId,
+    'state': state,
+    'origin': origin,
+    'userPick': userPick is UserPick ? (userPick as UserPick).toJson() : userPick,
+    'originWindow': originWindow,
+    'confirmedIndex': confirmedIndex,
+    'confirmedViaRescan': confirmedViaRescan,
+    'attempts': attempts,
   };
 
   factory CandidateGroup.fromJson(Map<String, dynamic> json) => CandidateGroup(
@@ -157,10 +260,24 @@ class CandidateGroup {
         [],
     selectedCandidateIndex: json['selectedCandidateIndex'] as int? ?? 0,
     status: json['status'] as String? ?? 'pending',
+    userPickId: json['userPickId'] as String?,
+    confirmedMatchId: json['confirmedMatchId'] as String?,
+    state: json['state'] as String?,
+    origin: json['origin'] as String?,
+    userPick: json['userPick'] != null
+        ? (json['userPick'] is Map<String, dynamic>
+            ? UserPick.fromJson(json['userPick'] as Map<String, dynamic>)
+            : json['userPick'])
+        : null,
+    originWindow: json['originWindow'] as String?,
+    confirmedIndex: json['confirmedIndex'] as int?,
+    confirmedViaRescan: json['confirmedViaRescan'] as bool?,
+    attempts: json['attempts'] as int?,
   );
 }
 
 class ChunkMatch {
+  String? id;
   final double shortStart;
   final double shortEnd;
   final double movieStart;
@@ -174,8 +291,20 @@ class ChunkMatch {
   String? rescanStatus; // 'none' | 'running' | 'found' | 'not_found'
   double? rescanMovieStart;
   double? rescanMovieEnd;
+  String? origin;
+  bool? userPick;
+  bool? viaRescan;
+  String? batchVerified;
+  String? batchVerifierReason;
+  String? batchCropPosition;
+  String? batchProof;
+  bool? rescanRequired;
+  bool? rejectedKept;
+  String? originWindow;
+  bool? rejected;
 
   ChunkMatch({
+    this.id,
     required this.shortStart,
     required this.shortEnd,
     required this.movieStart,
@@ -189,12 +318,24 @@ class ChunkMatch {
     this.rescanStatus = 'none',
     this.rescanMovieStart,
     this.rescanMovieEnd,
+    this.origin,
+    this.userPick,
+    this.viaRescan,
+    this.batchVerified,
+    this.batchVerifierReason,
+    this.batchCropPosition,
+    this.batchProof,
+    this.rescanRequired,
+    this.rejectedKept,
+    this.originWindow,
+    this.rejected,
   });
 
   double get duration => (shortEnd - shortStart).abs();
   double get movieDuration => (movieEnd - movieStart).abs();
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'shortStart': shortStart,
     'shortEnd': shortEnd,
     'movieStart': movieStart,
@@ -208,9 +349,21 @@ class ChunkMatch {
     'rescanStatus': rescanStatus,
     'rescanMovieStart': rescanMovieStart,
     'rescanMovieEnd': rescanMovieEnd,
+    'origin': origin,
+    'userPick': userPick,
+    'viaRescan': viaRescan,
+    'batchVerified': batchVerified,
+    'batchVerifierReason': batchVerifierReason,
+    'batchCropPosition': batchCropPosition,
+    'batchProof': batchProof,
+    'rescanRequired': rescanRequired,
+    'rejectedKept': rejectedKept,
+    'originWindow': originWindow,
+    'rejected': rejected,
   };
 
   factory ChunkMatch.fromJson(Map<String, dynamic> json) => ChunkMatch(
+    id: json['id'] as String?,
     shortStart: (json['shortStart'] as num).toDouble(),
     shortEnd: (json['shortEnd'] as num).toDouble(),
     movieStart: (json['movieStart'] as num).toDouble(),
@@ -224,6 +377,17 @@ class ChunkMatch {
     rescanStatus: json['rescanStatus'] as String? ?? 'none',
     rescanMovieStart: (json['rescanMovieStart'] as num?)?.toDouble(),
     rescanMovieEnd: (json['rescanMovieEnd'] as num?)?.toDouble(),
+    origin: json['origin'] as String?,
+    userPick: json['userPick'] as bool?,
+    viaRescan: json['viaRescan'] as bool?,
+    batchVerified: json['batchVerified'] as String?,
+    batchVerifierReason: json['batchVerifierReason'] as String?,
+    batchCropPosition: json['batchCropPosition'] as String?,
+    batchProof: json['batchProof'] as String?,
+    rescanRequired: json['rescanRequired'] as bool?,
+    rejectedKept: json['rejectedKept'] as bool?,
+    originWindow: json['originWindow'] as String?,
+    rejected: json['rejected'] as bool?,
   );
 }
 

@@ -59,6 +59,37 @@ class AuthApi {
     return AuthApiResponse(statusCode: 200, data: {'user': session.toJson()});
   }
 
+  /// GET /api/tokens (1:1 port of app/api/tokens/route.ts)
+  /// Current user's live token balance — polled by the header badge.
+  static Future<AuthApiResponse> getTokens(String? sessionToken) async {
+    final session = SessionService.verifySessionToken(sessionToken);
+    if (session == null) {
+      return AuthApiResponse(statusCode: 401, data: {'error': 'Unauthorized'});
+    }
+
+    // Admin has unlimited tokens.
+    if (session.role == 'admin') {
+      return AuthApiResponse(
+        statusCode: 200,
+        data: {
+          'unlimited': true,
+          'balance': null,
+          'scanCost': SCAN_TOKEN_COST,
+        },
+      );
+    }
+
+    final balance = await TokenService.getTokenBalance(session.username);
+    return AuthApiResponse(
+      statusCode: 200,
+      data: {
+        'unlimited': false,
+        'balance': balance,
+        'scanCost': SCAN_TOKEN_COST,
+      },
+    );
+  }
+
   /// GET /api/auth/users
   static Future<AuthApiResponse> getUsers(String? sessionToken) async {
     final session = SessionService.verifySessionToken(sessionToken);

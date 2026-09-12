@@ -301,4 +301,20 @@ class TwelveLabsService {
       expectedWindows: expectedWindows,
     );
   }
+
+  static String embFile(String scanId, String kind) {
+    return p.join(MediaService.scanMediaDir(scanId), '$kind-embeddings.json');
+  }
+
+  static Future<StoredEmbeddings?> loadEmbeddings(String scanId, String kind) async {
+    try {
+      final f = File(embFile(scanId, kind));
+      if (await f.exists()) {
+        final data = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+        final se = StoredEmbeddings.fromJson(data);
+        if (se.segments.isNotEmpty) return se;
+      }
+    } catch (_) {}
+    return null;
+  }
 }

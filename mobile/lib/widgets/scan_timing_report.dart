@@ -124,3 +124,5 @@ class ScanTimingReportWidget extends StatelessWidget {
     );
   }
 }
+
+typedef ScanTimingReport = ScanTimingReportWidget;

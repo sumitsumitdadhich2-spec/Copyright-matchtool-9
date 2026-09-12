@@ -1,179 +1,254 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import '../models/scan.dart';
-import '../services/scan_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
+import 'scan_timing_report.dart';
+import 'scan_usage_report.dart';
 
-class ReportPanel extends StatelessWidget {
+/// 1:1 Port of components/cmt/report-panel.tsx
+/// Match Report & Audit Panel with filters, search, candidate verification status, and forensic details.
+
+class ReportPanel extends StatefulWidget {
   final Scan scan;
 
   const ReportPanel({super.key, required this.scan});
 
   @override
+  State<ReportPanel> createState() => _ReportPanelState();
+}
+
+class _ReportPanelState extends State<ReportPanel> {
+  String _filterMode = 'all'; // all, confirmed, rejected, rescan, verifying
+  String _searchQuery = '';
+  int? _expandedIndex;
+
+  @override
   Widget build(BuildContext context) {
-    final scanService = context.read<ScanService>();
-    final rep = scan.report ?? scanService.generateReport();
-    final matches = scan.matches;
+    final matches = widget.scan.matches;
+    final groups = widget.scan.candidateGroups;
+
+    // Filter matches
+    final filtered = matches.asMap().entries.where((entry) {
+      final m = entry.value;
+      if (_filterMode == 'confirmed' && !(m.verified || m.batchVerified == 'confirmed')) return false;
+      if (_filterMode == 'rejected' && !(m.rejected || m.batchVerified == 'rejected')) return false;
+      if (_filterMode == 'rescan' && !(m.viaRescan || m.origin == 'rescan')) return false;
+      if (_filterMode == 'verifying' && m.batchVerified != 'verifying') return false;
+
+      if (_searchQuery.isNotEmpty) {
+        final q = _searchQuery.toLowerCase();
+        final text = '${formatSeconds(m.shortStart)} ${formatSeconds(m.movieStart)} ${m.model} ${m.reason ?? ""}'.toLowerCase();
+        if (!text.contains(q)) return false;
+      }
+      return true;
+    }).toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF18181B),
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.3)),
+        border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.assessment_outlined, color: Color(0xFF38BDF8), size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'Copyright Infringement Report',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ],
+              const Icon(Icons.assignment_turned_in_outlined, size: 18, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              const Text(
+                'Match Report & Verification Audit',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
+              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF38BDF8).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(4),
+                  color: AppTheme.primary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '${rep.matchPercentage.toStringAsFixed(1)}% INFRINGING',
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
+                  '${matches.where((m) => m.verified || m.batchVerified == "confirmed").length}/${matches.length} confirmed',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
 
-          // Stat grid
+          const SizedBox(height: 10),
+          // Filter pills + Search
           Row(
             children: [
               Expanded(
-                child: _buildStatBlock('Short Duration', Formatters.formatDuration(rep.shortDuration)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildStatBlock('Matched Duration', '${rep.totalMatchedSeconds.toStringAsFixed(1)}s'),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildStatBlock('Matches Found', '${rep.totalMatchesCount} (${rep.verifiedCount} AI-ok)'),
+                child: SizedBox(
+                  height: 32,
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Search timestamps or reason...',
+                      hintStyle: const TextStyle(fontSize: 11),
+                      prefixIcon: const Icon(Icons.search, size: 14),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      filled: true,
+                      fillColor: AppTheme.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                    ),
+                    style: const TextStyle(fontSize: 11),
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
 
-          // Timestamp Summary Table
-          if (matches.isNotEmpty) ...[
-            const Text(
-              'FORENSIC TIMESTAMPS',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white60, letterSpacing: 0.5),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFilterChip('all', 'All (${matches.length})'),
+                _buildFilterChip('confirmed', 'Confirmed (${matches.where((m) => m.verified || m.batchVerified == "confirmed").length})'),
+                _buildFilterChip('rejected', 'Rejected (${matches.where((m) => m.rejected || m.batchVerified == "rejected").length})'),
+                _buildFilterChip('rescan', 'Rescan (${matches.where((m) => m.viaRescan || m.origin == "rescan").length})'),
+                _buildFilterChip('verifying', 'Verifying'),
+              ],
             ),
-            const SizedBox(height: 6),
+          ),
+
+          const SizedBox(height: 10),
+          // Matches list
+          if (filtered.isEmpty)
             Container(
-              constraints: const BoxConstraints(maxHeight: 140),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.all(8),
-                itemCount: matches.length,
-                separatorBuilder: (_, __) => const Divider(height: 8, color: Colors.white10),
-                itemBuilder: (context, i) {
-                  final m = matches[i];
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '#${i + 1} Short: ${Formatters.formatDuration(m.shortStart)} - ${Formatters.formatDuration(m.shortEnd)}',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              alignment: Alignment.center,
+              child: const Text('No matches match the selected criteria.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+            )
+          else
+            ...filtered.map((entry) {
+              final idx = entry.key;
+              final m = entry.value;
+              final isExpanded = _expandedIndex == idx;
+              final isConfirmed = m.verified || m.batchVerified == 'confirmed';
+              final isRejected = m.rejected || m.batchVerified == 'rejected';
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.background.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isConfirmed
+                        ? AppTheme.success.withOpacity(0.4)
+                        : isRejected
+                            ? AppTheme.destructive.withOpacity(0.4)
+                            : AppTheme.border,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      dense: true,
+                      title: Row(
+                        children: [
+                          Text(
+                            'Short ${formatSeconds(m.shortStart)}–${formatSeconds(m.shortEnd)}',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          const Text(' ➔ ', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                          Text(
+                            'Movie ${formatSeconds(m.movieStart)}–${formatSeconds(m.movieEnd)}',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ],
                       ),
-                      Text(
-                        'Movie: ${Formatters.formatDuration(m.movieStart)} - ${Formatters.formatDuration(m.movieEnd)}',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF38BDF8)),
+                      subtitle: Text(
+                        'Chunk ${m.chunkIndex} · ${m.model} · Conf: ${((m.confidence ?? 0.8) * 100).toInt()}%',
+                        style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (isConfirmed ? AppTheme.success : isRejected ? AppTheme.destructive : AppTheme.warning).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              isConfirmed
+                                  ? 'CONFIRM YES'
+                                  : isRejected
+                                      ? 'REJECTED'
+                                      : 'UNVERIFIED',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: isConfirmed
+                                    ? AppTheme.success
+                                    : isRejected
+                                        ? AppTheme.destructive
+                                        : AppTheme.warning,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 16),
+                        ],
+                      ),
+                      onTap: () => setState(() => _expandedIndex = isExpanded ? null : idx),
+                    ),
+                    if (isExpanded) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Divider(height: 1),
+                            const SizedBox(height: 8),
+                            if (m.reason != null && m.reason!.isNotEmpty)
+                              Text('AI Evidence: ${m.reason}', style: const TextStyle(fontSize: 11, color: AppTheme.textForeground)),
+                            const SizedBox(height: 4),
+                            Text('Origin: ${m.origin ?? "gemini_scan"} · Model: ${m.model}', style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: AppTheme.textMuted)),
+                          ],
+                        ),
                       ),
                     ],
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
+                  ],
+                ),
+              );
+            }),
 
-          // Export & DMCA Notice Buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    final dmca = scanService.getFormattedDMCANotice();
-                    Clipboard.setData(ClipboardData(text: dmca));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('DMCA Takedown Notice copied to clipboard!')),
-                    );
-                  },
-                  icon: const Icon(Icons.gavel, size: 14),
-                  label: const Text('Copy DMCA Notice', style: TextStyle(fontSize: 11)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFF59E0B),
-                    side: const BorderSide(color: Color(0xFFF59E0B)),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    final csv = scanService.exportCsv();
-                    Clipboard.setData(ClipboardData(text: csv));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('CSV report copied to clipboard!')),
-                    );
-                  },
-                  icon: const Icon(Icons.file_download_outlined, size: 14),
-                  label: const Text('Export CSV', style: TextStyle(fontSize: 11)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF38BDF8),
-                    side: const BorderSide(color: Color(0xFF38BDF8)),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 12),
+          // Usage & Timing Sub-reports
+          ScanUsageReport(scan: widget.scan),
+          const SizedBox(height: 12),
+          ScanTimingReport(scan: widget.scan),
         ],
       ),
     );
   }
 
-  Widget _buildStatBlock(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: Colors.white60)),
-          const SizedBox(height: 2),
-          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
+  Widget _buildFilterChip(String mode, String label) {
+    final isSel = _filterMode == mode;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        onTap: () => setState(() => _filterMode = mode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSel ? AppTheme.primary.withOpacity(0.2) : AppTheme.secondary,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSel ? AppTheme.primary : Colors.transparent),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 10, fontWeight: isSel ? FontWeight.bold : FontWeight.normal, color: isSel ? AppTheme.primary : AppTheme.textMuted),
+          ),
+        ),
       ),
     );
   }

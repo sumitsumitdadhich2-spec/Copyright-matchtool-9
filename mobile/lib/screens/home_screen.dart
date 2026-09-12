@@ -33,6 +33,9 @@ import '../widgets/trim_panel.dart';
 import '../widgets/minute_select_panel.dart';
 import 'settings_screen.dart';
 import 'history_screen.dart';
+import '../widgets/auth_gate.dart';
+import '../widgets/users_dialog.dart';
+import '../widgets/token_badge_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -133,6 +136,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     final autoOn = activeScan?.autoMode ?? true;
     final verifierOn = activeScan?.verifierEnabled ?? true;
+    final auth = AuthGate.maybeOf(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -166,6 +170,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
         actions: [
+          // Live Token Balance Badge
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: TokenBadgeWidget(),
+          ),
+          const SizedBox(width: 4),
+
+          // Admin User Management
+          if (auth?.user.role == 'admin')
+            IconButton(
+              icon: const Icon(Icons.people_outline, size: 20),
+              tooltip: 'Manage Users (Admin)',
+              onPressed: () => UsersDialog.show(context),
+            ),
+
           // Quick Auto Mode Toggle
           IconButton(
             icon: Icon(
@@ -202,6 +221,28 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             tooltip: 'Settings (API Keys & Hardware)',
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
+          // Logout Button
+          if (auth != null)
+            IconButton(
+              icon: const Icon(Icons.logout, size: 18, color: Colors.white54),
+              tooltip: 'Sign Out (${auth.user.username})',
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Sign out?'),
+                    content: Text('Sign out of account "${auth.user.username}"?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                      ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sign out')),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  await auth.logout();
+                }
+              },
+            ),
         ],
         bottom: TabBar(
           controller: _tabController,

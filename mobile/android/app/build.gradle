@@ -56,6 +56,36 @@ android {
             shrinkResources = false
         }
     }
+
+    packaging {
+        resources {
+            excludes += [
+                '/META-INF/{AL2.0,LGPL2.1}',
+                '/META-INF/INDEX.LIST',
+                '/META-INF/DEPENDENCIES',
+                '/META-INF/LICENSE',
+                '/META-INF/LICENSE.txt',
+                '/META-INF/license.txt',
+                '/META-INF/NOTICE',
+                '/META-INF/NOTICE.txt',
+                '/META-INF/notice.txt'
+            ]
+        }
+        jniLibs {
+            pickFirsts += [
+                '**/libc++_shared.so',
+                '**/libfb.so',
+                '**/libavcodec.so',
+                '**/libavfilter.so',
+                '**/libavformat.so',
+                '**/libavutil.so',
+                '**/libswresample.so',
+                '**/libswscale.so',
+                '**/libffmpegkit.so',
+                '**/libffmpegkit_abidetect.so'
+            ]
+        }
+    }
 }
 
 flutter {

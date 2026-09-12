@@ -57,6 +57,8 @@ class StorageService extends ChangeNotifier {
     }
   }
 
+  Future<void> updateScan(Scan scan) => saveScan(scan);
+
   Future<void> updateScanName(String scanId, String customName) async {
     final index = _savedScans.indexWhere((s) => s.id == scanId);
     if (index >= 0) {

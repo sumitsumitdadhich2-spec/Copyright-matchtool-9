@@ -255,11 +255,50 @@ class ScanReport {
   );
 }
 
+class BackgroundInfo {
+  String state; // 'queued' | 'running' | 'done' | 'stopped' | 'error'
+  int? enqueuedAt;
+  int? startedAt;
+  int? position;
+  String? error;
+  bool? resume;
+
+  BackgroundInfo({
+    required this.state,
+    this.enqueuedAt,
+    this.startedAt,
+    this.position,
+    this.error,
+    this.resume,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'state': state,
+    'enqueuedAt': enqueuedAt,
+    'startedAt': startedAt,
+    'position': position,
+    'error': error,
+    'resume': resume,
+  };
+
+  factory BackgroundInfo.fromJson(Map<String, dynamic> json) => BackgroundInfo(
+    state: json['state'] as String? ?? 'queued',
+    enqueuedAt: json['enqueuedAt'] as int?,
+    startedAt: json['startedAt'] as int?,
+    position: json['position'] as int?,
+    error: json['error'] as String?,
+    resume: json['resume'] as bool?,
+  );
+}
+
 class Scan {
   final String id;
   final DateTime createdAt;
   ScanStatus status;
   String? customName;
+  String? ownerUsername;
+  BackgroundInfo? background;
+  bool awaitingTrim;
   String? shortPath;
   String? moviePath;
   String? shortName;
@@ -288,6 +327,10 @@ class Scan {
   String minuteFinderMode; // 'gemini' | 'fast' | 'off'
   double trimStart;
   double? trimEnd;
+  double? get movieTrimStart => trimStart == 0.0 ? null : trimStart;
+  set movieTrimStart(double? v) => trimStart = v ?? 0.0;
+  double? get movieTrimEnd => trimEnd;
+  set movieTrimEnd(double? v) => trimEnd = v;
   List<int> selectedMinutes;
   List<String> logs;
   RenderJob renderJob;
@@ -306,11 +349,17 @@ class Scan {
   GeminiBackupState backupState;
   List<MinuteSuggestion> suggestions;
 
+  Map<String, dynamic>? twelveLabs;
+  Map<String, dynamic>? prefilter;
+
   Scan({
     required this.id,
     required this.createdAt,
     this.status = ScanStatus.created,
     this.customName,
+    this.ownerUsername,
+    this.background,
+    this.awaitingTrim = false,
     this.shortPath,
     this.moviePath,
     this.shortName,
@@ -346,6 +395,8 @@ class Scan {
     this.prescanWindows = const [],
     GeminiBackupState? backupState,
     this.suggestions = const [],
+    this.twelveLabs,
+    this.prefilter,
   })  : renderJob = renderJob ?? RenderJob(),
         backupState = backupState ?? GeminiBackupState();
 
@@ -403,6 +454,9 @@ class Scan {
     'createdAt': createdAt.toIso8601String(),
     'status': status.name,
     'customName': customName,
+    'ownerUsername': ownerUsername,
+    'background': background?.toJson(),
+    'awaitingTrim': awaitingTrim,
     'shortPath': shortPath,
     'moviePath': moviePath,
     'shortName': shortName,
@@ -428,6 +482,8 @@ class Scan {
     'minuteFinderMode': minuteFinderMode,
     'trimStart': trimStart,
     'trimEnd': trimEnd,
+    'movieTrimStart': movieTrimStart,
+    'movieTrimEnd': movieTrimEnd,
     'selectedMinutes': selectedMinutes,
     'logs': logs,
     'renderJob': renderJob.toJson(),
@@ -437,6 +493,8 @@ class Scan {
     'prescanWindows': prescanWindows.map((w) => w.toJson()).toList(),
     'backupState': backupState.toJson(),
     'suggestions': suggestions.map((s) => s.toJson()).toList(),
+    'twelveLabs': twelveLabs,
+    'prefilter': prefilter,
   };
 
   factory Scan.fromJson(Map<String, dynamic> json) => Scan(
@@ -447,6 +505,11 @@ class Scan {
       orElse: () => ScanStatus.created,
     ),
     customName: json['customName'] as String?,
+    ownerUsername: json['ownerUsername'] as String?,
+    background: json['background'] != null
+        ? BackgroundInfo.fromJson(json['background'] as Map<String, dynamic>)
+        : null,
+    awaitingTrim: json['awaitingTrim'] as bool? ?? false,
     shortPath: json['shortPath'] as String?,
     moviePath: json['moviePath'] as String?,
     shortName: json['shortName'] as String?,
@@ -482,8 +545,8 @@ class Scan {
     autoMode: json['autoMode'] as bool? ?? true,
     verifierEnabled: json['verifierEnabled'] as bool? ?? true,
     minuteFinderMode: json['minuteFinderMode'] as String? ?? 'gemini',
-    trimStart: (json['trimStart'] as num?)?.toDouble() ?? 0.0,
-    trimEnd: (json['trimEnd'] as num?)?.toDouble(),
+    trimStart: (json['movieTrimStart'] as num?)?.toDouble() ?? (json['trimStart'] as num?)?.toDouble() ?? 0.0,
+    trimEnd: (json['movieTrimEnd'] as num?)?.toDouble() ?? (json['trimEnd'] as num?)?.toDouble(),
     selectedMinutes: (json['selectedMinutes'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
     logs: (json['logs'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     renderJob: json['renderJob'] != null

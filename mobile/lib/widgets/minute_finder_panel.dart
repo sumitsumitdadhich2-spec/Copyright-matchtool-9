@@ -1,9 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 import '../models/scan.dart';
-import '../services/scan_service.dart';
-import '../services/settings_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
+import 'minute_finder_toggle.dart';
+import 'missing_scene_panel.dart';
+
+/// 1:1 Port of components/cmt/minute-finder-panel.tsx
+/// Auto Pipeline (Gemini Minute Finder vs TwelveLabs vs Off).
 
 class MinuteFinderPanel extends StatefulWidget {
   final Scan scan;
@@ -15,379 +20,353 @@ class MinuteFinderPanel extends StatefulWidget {
 }
 
 class _MinuteFinderPanelState extends State<MinuteFinderPanel> {
-  String _mode = 'gemini'; // 'gemini' | 'twelvelabs' | 'off'
+  String _mode = 'gemini';
+  String? _acting;
+  String? _actionError;
+  int? _openWindow;
+  int? _openBackupWindow;
 
-  final List<Map<String, String>> _steps = [
-    {'key': 'preparing', 'label': 'Preparing Video'},
-    {'key': 'uploading', 'label': 'Key Uploads'},
-    {'key': 'scanning', 'label': '20m Windows'},
-    {'key': 'backup', 'label': 'Backup Gaps'},
-    {'key': 'starting_scan', 'label': 'Chunk Scan'},
+  static const List<Map<String, String>> _steps = [
+    {'key': 'preparing', 'label': 'Prepare movie copy'},
+    {'key': 'uploading', 'label': 'Upload'},
+    {'key': 'scanning', 'label': 'Scan windows'},
+    {'key': 'backup', 'label': 'Backup finder'},
+    {'key': 'starting_scan', 'label': 'Minutes found'},
+    {'key': 'done', 'label': 'Chunk scan started'},
   ];
 
-  int _getStepIndex(String status) {
-    switch (status) {
-      case 'preparing':
-        return 0;
-      case 'uploading':
-        return 1;
-      case 'scanning':
-        return 2;
-      case 'backup':
-        return 3;
-      case 'starting_scan':
-      case 'done':
-        return 4;
-      default:
-        return -1;
+  static const List<String> _activeStatuses = ['preparing', 'uploading', 'scanning', 'backup', 'starting_scan'];
+
+  int _reachedStep(Map<String, dynamic>? prescan) {
+    if (prescan == null) return 0;
+    final status = prescan['status'] as String? ?? 'idle';
+    if (status == 'done') return _steps.length;
+    final idx = _steps.indexWhere((s) => s['key'] == status);
+    if (idx >= 0) return idx;
+    if ((prescan['minuteSuggestions'] as List?)?.isNotEmpty == true) return 4;
+    if (prescan['backup'] != null && prescan['backup']['status'] != 'idle') return 3;
+    if ((prescan['windows'] as List?)?.isNotEmpty == true) return 2;
+    if ((prescan['uploads'] as Map?)?.isNotEmpty == true) return 1;
+    return 0;
+  }
+
+  Future<void> _postAction(String action) async {
+    setState(() {
+      _acting = action;
+      _actionError = null;
+    });
+
+    try {
+      final res = await http.post(
+        Uri.parse('/api/scans/${widget.scan.id}/minute-finder'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'action': action}),
+      );
+      if (!mounted) return;
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        final j = jsonDecode(res.body) as Map<String, dynamic>?;
+        setState(() => _actionError = j?['error'] as String? ?? 'Action failed');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _acting = null);
+    }
+  }
+
+  Future<void> _stop() async {
+    setState(() {
+      _acting = 'stop';
+      _actionError = null;
+    });
+
+    try {
+      final res = await http.delete(Uri.parse('/api/scans/${widget.scan.id}/minute-finder'));
+      if (!mounted) return;
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        final j = jsonDecode(res.body) as Map<String, dynamic>?;
+        setState(() => _actionError = j?['error'] as String? ?? 'Stop failed');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _actionError = e.toString());
+    } finally {
+      if (mounted) setState(() => _acting = null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final scanService = context.watch<ScanService>();
-    final settings = context.watch<SettingsService>();
-    final scan = widget.scan;
-    final prescanStatus = scan.prescanStatus;
-    final isRunning = scanService.isScanning && (prescanStatus != 'idle' && prescanStatus != 'done');
-    final currentStepIdx = _getStepIndex(prescanStatus);
+    final prescan = widget.scan.geminiPrescan;
+    final status = prescan?['status'] as String? ?? widget.scan.prescanStatus;
+    final isActive = _activeStatuses.contains(status);
+    final isDone = status == 'done';
+    final isError = status == 'error';
+    final step = _reachedStep(prescan);
 
-    final windows = scan.prescanWindows;
-    final matchWindows = windows.where((w) => w.status == 'match').length;
-    final doneWindows = windows.where((w) => w.status == 'match' || w.status == 'no_match').length;
-    final failedWindows = windows.where((w) => w.status == 'error').length;
-    final keyCount = settings.hasApiKey ? 1 : 0;
+    final rawWindows = (prescan?['windows'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final doneWindows = rawWindows.where((w) => w['status'] == 'done').length;
+    final failedWindows = rawWindows.where((w) => w['status'] == 'failed').length;
+
+    final backup = prescan?['backup'] as Map<String, dynamic>?;
+    final backupWindows = (backup?['windows'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final backupFailed = backupWindows.where((w) => w['status'] == 'failed').length;
+    final backupAdded = (backup?['addedMinutes'] as List?)?.cast<int>() ?? [];
+
+    final minutes = (prescan?['appliedMinutes'] as List?)?.cast<int>() ??
+        (prescan?['minuteSuggestions'] as List?)?.map((s) => (s['minute'] as num).toInt()).toList() ??
+        [];
+
+    final totalFailed = failedWindows + backupFailed;
+    final canStart = _mode == 'gemini' && !isActive && (status == 'idle' || isError) && !isDone;
+    final canRetry = _mode == 'gemini' && !isActive && (totalFailed > 0 || (isError && rawWindows.isNotEmpty));
+    final canRerun = _mode == 'gemini' && !isActive && rawWindows.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF18181B),
+        color: AppTheme.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.3)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // Header + MinuteFinderToggle
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.auto_awesome, color: Color(0xFF38BDF8), size: 18),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Auto Pipeline — Minute Finder',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              const Icon(Icons.layers_outlined, size: 18, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Auto Pipeline ${_mode == "gemini" ? "(Gemini Minute Finder)" : _mode == "twelvelabs" ? "(TwelveLabs)" : "(off)"}',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isRunning
-                      ? const Color(0xFF38BDF8).withOpacity(0.2)
-                      : (prescanStatus == 'done'
-                          ? const Color(0xFF10B981).withOpacity(0.2)
-                          : Colors.white10),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  isRunning
-                      ? 'RUNNING...'
-                      : (prescanStatus == 'done' ? 'CHUNK SCAN STARTED' : 'READY'),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    color: isRunning
-                        ? const Color(0xFF38BDF8)
-                        : (prescanStatus == 'done' ? const Color(0xFF34D399) : Colors.white60),
-                  ),
-                ),
+              const Spacer(),
+              MinuteFinderToggle(
+                mode: _mode,
+                onChanged: (m) => setState(() => _mode = m),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Gemini Files API Upload per Key ➔ 20-min Window Scan ➔ Backup Gap Pass ➔ Auto-Launch 24fps Chunk Scan.',
-            style: TextStyle(fontSize: 11, color: Colors.white60),
-          ),
-          const SizedBox(height: 10),
 
-          // Mode Selector
-          Row(
-            children: [
-              ChoiceChip(
-                label: const Text('Gemini Minute Finder', style: TextStyle(fontSize: 11)),
-                selected: _mode == 'gemini',
-                onSelected: (_) => setState(() => _mode = 'gemini'),
-                selectedColor: const Color(0xFF38BDF8).withOpacity(0.2),
-                checkmarkColor: const Color(0xFF38BDF8),
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: const Text('TwelveLabs', style: TextStyle(fontSize: 11)),
-                selected: _mode == 'twelvelabs',
-                onSelected: (_) => setState(() => _mode = 'twelvelabs'),
-                selectedColor: const Color(0xFF818CF8).withOpacity(0.2),
-                checkmarkColor: const Color(0xFF818CF8),
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: const Text('Off (Full Scan)', style: TextStyle(fontSize: 11)),
-                selected: _mode == 'off',
-                onSelected: (_) => setState(() => _mode = 'off'),
-                selectedColor: Colors.white12,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
+          if (_mode == 'off') ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Minute finder OFF hai — upload + trim ke baad kuch auto nahi chalega. Manual Start scan dabane par normal FULL scan hoga.',
+              style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+            ),
+          ],
+
+          if (_mode == 'twelvelabs') ...[
+            const SizedBox(height: 8),
+            const Text(
+              'TwelveLabs mode — purana merge → Marengo → Pegasus → minute approval flow chalta hai.',
+              style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+            ),
+          ],
 
           if (_mode == 'gemini') ...[
-            // Actions Toolbar
+            const SizedBox(height: 10),
+            // Actions
             Wrap(
               spacing: 8,
-              runSpacing: 6,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                ElevatedButton.icon(
-                  onPressed: isRunning
-                      ? null
-                      : () {
-                          scanService.configureGemini(settings.apiKey, model: settings.selectedModel);
-                          scanService.runGeminiMinuteFinder();
-                        },
-                  icon: isRunning
-                      ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.play_arrow, size: 16),
-                  label: const Text('Start Minute Finder', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF38BDF8),
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                if (canStart)
+                  ElevatedButton.icon(
+                    onPressed: _acting != null ? null : () => _postAction('start'),
+                    icon: _acting == 'start'
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.black))
+                        : const Icon(Icons.play_arrow, size: 14),
+                    label: Text(_acting == 'start' ? 'Starting...' : 'Start minute finder', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
-                ),
-                if (failedWindows > 0)
-                  OutlinedButton.icon(
-                    onPressed: isRunning ? null : () => scanService.retryFailedWindows(),
-                    icon: const Icon(Icons.replay, size: 14),
-                    label: Text('Retry Failed ($failedWindows)', style: const TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    ),
+                if (canRetry)
+                  ElevatedButton.icon(
+                    onPressed: _acting != null ? null : () => _postAction('retry'),
+                    icon: _acting == 'retry'
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.black))
+                        : const Icon(Icons.refresh, size: 14),
+                    label: Text('Retry failed windows${totalFailed > 0 ? " ($totalFailed)" : ""}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
-                if (windows.isNotEmpty && !isRunning)
+                if (canRerun)
                   OutlinedButton.icon(
-                    onPressed: () => scanService.rerunMinuteFinder(),
+                    onPressed: _acting != null ? null : () => _postAction('rerun'),
                     icon: const Icon(Icons.refresh, size: 14),
-                    label: const Text('Re-run', style: TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    ),
+                    label: const Text('Re-run minute finder', style: TextStyle(fontSize: 11)),
                   ),
-                if (isRunning)
-                  OutlinedButton.icon(
-                    onPressed: () => scanService.stopMinuteFinder(),
-                    icon: const Icon(Icons.stop, size: 14, color: Color(0xFFEF4444)),
-                    label: const Text('Stop', style: TextStyle(fontSize: 11, color: Color(0xFFEF4444))),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFEF4444)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    ),
+                if (isActive)
+                  ElevatedButton.icon(
+                    onPressed: _acting != null ? null : _stop,
+                    icon: const Icon(Icons.stop, size: 14),
+                    label: const Text('Stop', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.destructive),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
 
-            // Pipeline Step Badges
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(_steps.length, (i) {
-                  final s = _steps[i];
-                  final isPast = currentStepIdx > i || prescanStatus == 'done';
-                  final isCurrent = currentStepIdx == i && isRunning;
+            if (_actionError != null) ...[
+              const SizedBox(height: 6),
+              Text(_actionError!, style: const TextStyle(fontSize: 11, color: AppTheme.destructive)),
+            ],
 
-                  Color bg = Colors.white.withOpacity(0.04);
-                  Color textCol = Colors.white54;
-                  Color border = Colors.white12;
+            // Step Progress Timeline
+            if (isActive || isDone || isError) ...[
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _steps.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final s = entry.value;
+                    final done = step > idx || isDone;
+                    final active = isActive && step == idx;
+                    final failed = isError && step == idx;
 
-                  if (isPast) {
-                    bg = const Color(0xFF10B981).withOpacity(0.15);
-                    textCol = const Color(0xFF34D399);
-                    border = const Color(0xFF10B981).withOpacity(0.3);
-                  } else if (isCurrent) {
-                    bg = const Color(0xFF38BDF8).withOpacity(0.15);
-                    textCol = const Color(0xFF38BDF8);
-                    border = const Color(0xFF38BDF8);
-                  }
-
-                  return Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: border),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    return Row(
                       children: [
-                        if (isPast)
-                          const Icon(Icons.check, size: 12, color: Color(0xFF10B981))
-                        else if (isCurrent)
-                          const SizedBox(
-                            width: 10,
-                            height: 10,
-                            child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF38BDF8)),
-                          )
-                        else
-                          Text('${i + 1}.', style: const TextStyle(fontSize: 10, color: Colors.white38)),
-                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: done
+                                ? AppTheme.success.withOpacity(0.15)
+                                : active
+                                    ? AppTheme.primary.withOpacity(0.15)
+                                    : failed
+                                        ? AppTheme.destructive.withOpacity(0.15)
+                                        : AppTheme.secondary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (done)
+                                const Icon(Icons.check, size: 12, color: AppTheme.success)
+                              else if (active)
+                                const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.5))
+                              else if (failed)
+                                const Icon(Icons.warning_amber_rounded, size: 12, color: AppTheme.destructive),
+                              if (done || active || failed) const SizedBox(width: 4),
+                              Text(
+                                s['label']!,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                                  color: done
+                                      ? AppTheme.success
+                                      : active
+                                          ? AppTheme.primary
+                                          : failed
+                                              ? AppTheme.destructive
+                                              : AppTheme.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (idx < _steps.length - 1)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(Icons.arrow_forward, size: 10, color: AppTheme.textMuted),
+                          ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+
+            // Minutes Found Banner
+            if (minutes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.auto_awesome, size: 14, color: AppTheme.success),
+                        const SizedBox(width: 6),
                         Text(
-                          s['label']!,
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: textCol),
+                          'Movie minute ${minutes.join(", ")} found (${rawWindows.length} windows · ±1 min buffer)',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.success),
                         ),
                       ],
                     ),
-                  );
-                }),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // STEP 1 DETAILS: Key Uploads Status
-            if (scan.prescanUploads.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.cloud_upload_outlined, size: 14, color: Color(0xFF38BDF8)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Gemini Files API Upload: ${scan.prescanUploads.first.keyId} (${scan.prescanUploads.first.status.toUpperCase()})',
-                        style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: Colors.white70),
-                      ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: minutes.map((m) {
+                        final fromBackup = backupAdded.contains(m);
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: fromBackup ? AppTheme.primary.withOpacity(0.15) : AppTheme.card,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: fromBackup ? AppTheme.primary : AppTheme.success.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            '$m: ${formatSeconds(m * 60)}–${formatSeconds((m + 1) * 60)}${fromBackup ? " [BK]" : ""}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.bold,
+                              color: fromBackup ? AppTheme.primary : AppTheme.success,
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
-                    if (scan.prescanUploads.first.status == 'ready')
-                      const Text('✓ Ready for 47h', style: TextStyle(fontSize: 9, color: Color(0xFF10B981))),
                   ],
                 ),
               ),
-              const SizedBox(height: 10),
             ],
 
-            // STEP 2 DETAILS: 20-min Windows Breakdown Grid
-            if (windows.isNotEmpty) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '20-Minute Windows ($doneWindows/${windows.length} done • $matchWindows matches)',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white70),
-                  ),
-                ],
+            // Windows Grid
+            if (rawWindows.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Windows (${doneWindows}/${rawWindows.length} done${failedWindows > 0 ? ", $failedWindows failed" : ""}) — short @10fps + window @1fps',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
               ),
               const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: windows.map((w) {
-                  Color bg = const Color(0xFF27272A);
-                  Color border = Colors.white10;
-                  Widget? statusIcon;
+              ...rawWindows.map((w) {
+                final idx = (w['index'] as num?)?.toInt() ?? 0;
+                final wStatus = w['status'] as String? ?? 'pending';
+                final matchesCount = (w['matches'] as num?)?.toInt() ?? 0;
+                final isOpen = _openWindow == idx;
 
-                  if (w.status == 'match') {
-                    bg = const Color(0xFF10B981).withOpacity(0.2);
-                    border = const Color(0xFF10B981);
-                    statusIcon = const Icon(Icons.check, size: 12, color: Color(0xFF10B981));
-                  } else if (w.status == 'scanning') {
-                    bg = const Color(0xFF38BDF8).withOpacity(0.2);
-                    border = const Color(0xFF38BDF8);
-                    statusIcon = const SizedBox(
-                      width: 10,
-                      height: 10,
-                      child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF38BDF8)),
-                    );
-                  } else if (w.status == 'no_match') {
-                    bg = Colors.black38;
-                  } else if (w.status == 'error') {
-                    bg = const Color(0xFFEF4444).withOpacity(0.2);
-                    border = const Color(0xFFEF4444);
-                  }
-
-                  return Tooltip(
-                    message: 'Window #${w.index + 1}: ${Formatters.formatDuration(w.startSec)} - ${Formatters.formatDuration(w.endSec)} (${w.status})',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: bg,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: border),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (statusIcon != null) ...[
-                            statusIcon,
-                            const SizedBox(width: 4),
-                          ],
-                          Text(
-                            'W${w.index + 1} (${(w.startSec / 60).toInt()}m-${(w.endSec / 60).toInt()}m)',
-                            style: const TextStyle(fontSize: 10, fontFamily: 'monospace', fontWeight: FontWeight.bold),
-                          ),
-                          if (w.matchedMinutes.isNotEmpty) ...[
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10B981),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                              child: Text(
-                                '+${w.matchedMinutes.length}',
-                                style: const TextStyle(fontSize: 8, color: Colors.black, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(
+                      color: matchesCount > 0 ? AppTheme.success.withOpacity(0.4) : AppTheme.border,
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 10),
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    title: Text(
+                      'Window ${idx + 1}: ${formatSeconds((w["startSec"] as num?)?.toDouble() ?? (idx * 1200.0))} – ${formatSeconds((w["endSec"] as num?)?.toDouble() ?? ((idx + 1) * 1200.0))}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text('Status: $wStatus · Matches: $matchesCount', style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                    trailing: Icon(isOpen ? Icons.expand_less : Icons.expand_more, size: 16),
+                    onTap: () => setState(() => _openWindow = isOpen ? null : idx),
+                  ),
+                );
+              }),
             ],
 
-            // STEP 3 DETAILS: Backup Pass Info
-            if (scan.backupState.status != 'idle') ...[
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.shield_moon_outlined, size: 14, color: Color(0xFFF59E0B)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Backup Gap Pass: ${scan.backupState.status.toUpperCase()} (${scan.backupState.gapCount} gaps checked • ${scan.backupState.recoveredMinutes.length} recovered)',
-                        style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: Colors.white70),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            // Missing Scene Panel
+            MissingScenePanel(scan: widget.scan),
           ],
         ],
       ),

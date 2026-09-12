@@ -3,7 +3,12 @@ name: Build Shiva MatchTool Android APK
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -23,9 +28,11 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.x'
           channel: 'stable'
           cache: true
+
+      - name: Check Flutter Doctor
+        run: flutter doctor -v
 
       - name: Install Mobile Dependencies
         run: |
@@ -36,11 +43,18 @@ jobs:
       - name: Build Android APK (Release)
         run: |
           cd mobile
-          flutter build apk --release
+          flutter build apk --release --no-tree-shake-icons
+
+      - name: Locate Built APK
+        run: |
+          ls -la mobile/build/app/outputs/flutter-apk/ || ls -la mobile/build/app/outputs/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: shiva-matchtool-apk
-          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            mobile/build/app/outputs/flutter-apk/*.apk
+            mobile/build/app/outputs/**/*.apk
           if-no-files-found: error
+

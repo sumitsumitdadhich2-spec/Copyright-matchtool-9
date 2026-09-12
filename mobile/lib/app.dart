@@ -5,6 +5,7 @@ import 'services/storage_service.dart';
 import 'services/scan_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
+import 'widgets/auth_gate.dart';
 
 class ShivaMatchApp extends StatelessWidget {
   final SettingsService settingsService;
@@ -30,7 +31,7 @@ class ShivaMatchApp extends StatelessWidget {
         title: 'Shiva MatchTool',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const HomeScreen(),
+        home: const AuthGate(child: HomeScreen()),
       ),
     );
   }

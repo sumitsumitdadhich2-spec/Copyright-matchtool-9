@@ -17,11 +17,99 @@ import '../utils/candidate_pick.dart';
 
 class SchedulerService {
   static final Map<String, bool> _activeJobs = {};
+  static final Map<String, bool> _verifierEnabledMap = {};
 
   static bool isRunning(String scanId) => _activeJobs[scanId] == true;
 
-  static void stop(String scanId) {
+  static Map<String, dynamic> stop(String scanId) {
+    if (_activeJobs[scanId] != true) {
+      return {'ok': false, 'error': 'Scan is not running'};
+    }
     _activeJobs[scanId] = false;
+    return {'ok': true};
+  }
+
+  static void setVerifierEnabled(String scanId, bool enabled) {
+    _verifierEnabledMap[scanId] = enabled;
+  }
+
+  static bool isVerifierEnabled(String scanId) => _verifierEnabledMap[scanId] ?? true;
+
+  /// Manual chunk retry: re-runs the chunk-map for one chunk
+  static Future<Map<String, dynamic>> retryChunk({
+    required StorageService storageService,
+    required FFmpegService ffmpegService,
+    required GeminiService geminiService,
+    required String scanId,
+    required int chunkIndex,
+    int? segmentIndex,
+    List<String>? userApiKeys,
+  }) async {
+    final scans = await storageService.loadScans();
+    final scan = scans.where((s) => s.id == scanId).firstOrNull;
+    if (scan == null) return {'ok': false, 'error': 'Scan not found'};
+
+    ShortSegment? seg;
+    Chunk? chunk;
+    if (scan.shortSegments.isNotEmpty) {
+      final si = segmentIndex ?? 0;
+      if (si < 0 || si >= scan.shortSegments.length) {
+        return {'ok': false, 'error': 'Short minute $si not found'};
+      }
+      seg = scan.shortSegments[si];
+      chunk = scan.chunks.where((c) => c.index == chunkIndex).firstOrNull;
+    } else {
+      chunk = scan.chunks.where((c) => c.index == chunkIndex).firstOrNull;
+    }
+
+    if (chunk == null) {
+      return {'ok': false, 'error': 'Chunk $chunkIndex not found'};
+    }
+
+    final isFailedChunk = chunk.status == ChunkStatus.error;
+    final pendingVerify = scan.candidateGroups.where((g) => g.status == 'pending' || g.status == 'verifying' || g.status == 'rescanning').length;
+    if (pendingVerify > 0 && !isFailedChunk) {
+      return {
+        'ok': false,
+        'error': 'Verification in progress — $pendingVerify candidate group(s) pending. Retry tabhi milega jab saare candidates verify ho jayen.',
+      };
+    }
+
+    if (chunk.status == ChunkStatus.scanning && _activeJobs[scanId] == true) {
+      return {'ok': false, 'error': 'Chunk $chunkIndex is currently in flight — wait for it to finish'};
+    }
+
+    final segStart = seg != null ? seg.startSec : 0.0;
+    final segEnd = seg != null ? seg.endSec : double.infinity;
+
+    chunk.status = ChunkStatus.pending;
+    chunk.error = null;
+    scan.matches = scan.matches.where((mm) => !(mm.chunkIndex == chunkIndex && mm.shortStart >= segStart && mm.shortStart < segEnd)).toList();
+    if (scan.candidateGroups.isNotEmpty) {
+      scan.candidateGroups = scan.candidateGroups.where((g) => !(g.shortStart >= segStart && g.shortStart < segEnd && g.candidates.any((c) => c.chunkIndex == chunkIndex))).toList();
+    }
+
+    if (scan.status == ScanStatus.done || scan.status == ScanStatus.stopped || scan.status == ScanStatus.error) {
+      scan.status = ScanStatus.stopped;
+    }
+    await storageService.updateScan(scan);
+
+    if (_activeJobs[scanId] == true) {
+      return {'ok': true};
+    }
+
+    if (userApiKeys == null || userApiKeys.isEmpty) {
+      return {'ok': true};
+    }
+
+    return start(
+      storageService: storageService,
+      ffmpegService: ffmpegService,
+      geminiService: geminiService,
+      scanId: scanId,
+      apiKeys: userApiKeys,
+      isResume: true,
+    );
   }
 
   /// Start AI chunk scan

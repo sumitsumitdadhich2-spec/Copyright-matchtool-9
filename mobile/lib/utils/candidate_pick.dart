@@ -258,3 +258,22 @@ String originLabel(String? origin) {
   if (origin == 'user') return 'User Manual Pick';
   return 'Chunk Scan';
 }
+
+class CandidatePickUtils {
+  static bool sameShortSegment(double aStart, double aEnd, double bStart, double bEnd) =>
+      sameShortSegment(aStart, aEnd, bStart, bEnd);
+
+  static void applyGroupMatches(Scan scan, [CandidateGroup? g]) {
+    if (g != null) {
+      if (g.userPick is UserPick) {
+        final up = g.userPick as UserPick;
+        if (up.index >= 0 && up.index < g.candidates.length) {
+          g.userPickId = g.candidates[up.index].id;
+        }
+      } else if (g.userPick == null) {
+        g.userPickId = null;
+      }
+    }
+    applyGroupMatches(scan);
+  }
+}

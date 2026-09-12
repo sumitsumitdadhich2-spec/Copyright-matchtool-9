@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../models/scan.dart';
 import 'storage_service.dart';
+import 'ffmpeg_service.dart';
 
 /// 1:1 Port of lib/media.ts
 /// Local media management, cache deduplication, hard-link reuse, and storage sync.
@@ -234,5 +235,88 @@ class MediaService {
     }
 
     return null;
+  }
+
+  static const int STORAGE_LIMIT_BYTES = 50 * 1024 * 1024 * 1024;
+  static int? _cachedUsage;
+
+  static void invalidateUsageCache() {
+    _cachedUsage = null;
+  }
+
+  static Future<int> getStorageUsage() async {
+    if (_cachedUsage != null) return _cachedUsage!;
+    try {
+      final baseDir = Directory(scanMediaDir('').replaceAll('${p.separator}${p.separator}', p.separator));
+      if (!await baseDir.exists()) return 0;
+      int total = 0;
+      await for (final entity in baseDir.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          total += await entity.length();
+        }
+      }
+      _cachedUsage = total;
+      return total;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<bool> reuseMedia(String scanId, String kind, String sourceId, int total) async {
+    try {
+      final src = localMediaPath(sourceId, kind);
+      final dst = localMediaPath(scanId, kind);
+      final srcFile = File(src);
+      if (!await srcFile.exists() || await srcFile.length() != total) return false;
+      final dstFile = File(dst);
+      await dstFile.parent.create(recursive: true);
+      await srcFile.copy(dst);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> mirrorMediaToStorage(String scanId, String kind, String mimeType) async {
+    // Local / S3 mirror no-op in mobile
+  }
+
+  static Future<void> mirrorReusedMedia(String scanId, String kind, String sourceId, String mimeType) async {
+    // Local / S3 mirror no-op in mobile
+  }
+
+  static Future<Map<String, dynamic>> finalizeUploadedMedia(
+    Scan scan,
+    String kind,
+    String name, {
+    FFmpegService? ffmpegService,
+  }) async {
+    final dest = localMediaPath(scan.id, kind);
+    final file = File(dest);
+    if (!await file.exists() || await file.length() == 0) {
+      return {'ok': false, 'error': 'Video not found on the server — upload may have failed. Please try again.'};
+    }
+    final size = await file.length();
+    final ffmpeg = ffmpegService ?? FFmpegService();
+    double duration = 0.0;
+    try {
+      duration = await ffmpeg.getVideoDuration(dest);
+    } catch (err) {
+      return {'ok': false, 'error': 'Could not read video duration: $err'};
+    }
+
+    if (kind == 'short') {
+      scan.shortName = name;
+      scan.shortPath = dest;
+      scan.shortSize = size;
+      scan.shortDuration = duration;
+    } else {
+      scan.movieName = name;
+      scan.moviePath = dest;
+      scan.movieSize = size;
+      scan.movieDuration = duration;
+      scan.awaitingTrim = true;
+    }
+    return {'ok': true, 'duration': duration, 'size': size};
   }
 }

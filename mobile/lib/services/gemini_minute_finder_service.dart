@@ -86,16 +86,31 @@ class GeminiMinuteFinderService {
     return {'ok': true};
   }
 
-  static Future<void> stopGeminiMinuteFinder(StorageService storageService, String scanId) async {
+  static Future<void> stopGeminiMinuteFinder(String scanId, [StorageService? storageService]) async {
     _runningControllers[scanId] = false;
-    final scans = await storageService.loadScans();
-    final scan = scans.where((s) => s.id == scanId).firstOrNull;
-    if (scan != null) {
-      scan.geminiPrescanStatus = 'error';
-      scan.geminiPrescanError = 'Stopped by user';
-      scan.geminiPrescanProgress = null;
-      await storageService.updateScan(scan);
+    if (storageService != null) {
+      final scans = await storageService.loadScans();
+      final scan = scans.where((s) => s.id == scanId).firstOrNull;
+      if (scan != null) {
+        scan.geminiPrescanStatus = 'error';
+        scan.geminiPrescanError = 'Stopped by user';
+        scan.geminiPrescanProgress = null;
+        await storageService.updateScan(scan);
+      }
     }
+  }
+
+  static Future<bool> stopAndWaitMinuteFinder(String scanId, String reason, [int timeoutMs = 10000]) async {
+    if (!isMinuteFinderRunning(scanId)) return true;
+    _runningControllers[scanId] = false;
+    final start = DateTime.now().millisecondsSinceEpoch;
+    while (isMinuteFinderRunning(scanId)) {
+      if (DateTime.now().millisecondsSinceEpoch - start > timeoutMs) {
+        return false;
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return true;
   }
 
   static Future<void> _runAsync({
