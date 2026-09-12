@@ -43,7 +43,8 @@ jobs:
       - name: Build Android APK (Release)
         run: |
           cd mobile
-          flutter build apk --release --no-tree-shake-icons
+          chmod +x android/gradlew || true
+          flutter build apk --release --no-tree-shake-icons --android-skip-build-dependency-validation
 
       - name: Locate Built APK
         run: |
