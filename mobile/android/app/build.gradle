@@ -25,7 +25,7 @@ if (flutterVersionName == null) {
 android {
     namespace "com.shiva.matchtool"
     compileSdk = 35
-    ndkVersion = "25.1.8937393"
+    ndkVersion = flutter.ndkVersion ?: "26.1.10909125"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -49,6 +49,10 @@ android {
         multiDexEnabled = true
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.debug
@@ -60,6 +64,16 @@ android {
     packaging {
         resources {
             excludes += [
+                'META-INF/AL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/INDEX.LIST',
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/license.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/notice.txt',
                 '/META-INF/{AL2.0,LGPL2.1}',
                 '/META-INF/INDEX.LIST',
                 '/META-INF/DEPENDENCIES',
@@ -82,7 +96,9 @@ android {
                 '**/libswresample.so',
                 '**/libswscale.so',
                 '**/libffmpegkit.so',
-                '**/libffmpegkit_abidetect.so'
+                '**/libffmpegkit_abidetect.so',
+                'lib/**/libc++_shared.so',
+                'lib/**/libffmpegkit.so'
             ]
         }
     }

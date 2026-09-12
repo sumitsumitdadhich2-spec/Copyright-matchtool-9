@@ -42,16 +42,27 @@ jobs:
           cd mobile
           flutter clean
           flutter pub get
+          mkdir -p android/gradle/wrapper
+          if [ ! -f "android/gradlew" ]; then
+            curl -sLo android/gradlew https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradlew || true
+          fi
+          if [ ! -f "android/gradle/wrapper/gradle-wrapper.jar" ]; then
+            curl -sLo android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar || true
+          fi
+          chmod +x android/gradlew || true
+          if [ -n "$FLUTTER_ROOT" ]; then
+            echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          fi
 
       - name: Build Android APK (Release)
         run: |
           cd mobile
           chmod +x android/gradlew || true
-          flutter build apk --release --no-tree-shake-icons --android-skip-build-dependency-validation -v
+          flutter build apk --release --no-tree-shake-icons -v
 
       - name: Locate Built APK
         run: |
-          ls -la mobile/build/app/outputs/flutter-apk/ || ls -la mobile/build/app/outputs/
+          find mobile/ -name "*.apk" -type f || ls -la mobile/build/app/outputs/flutter-apk/ || true
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -60,5 +71,6 @@ jobs:
           path: |
             mobile/build/app/outputs/flutter-apk/*.apk
             mobile/build/app/outputs/**/*.apk
+            mobile/**/*.apk
           if-no-files-found: error
 
