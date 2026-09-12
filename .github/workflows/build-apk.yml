@@ -50,9 +50,14 @@ jobs:
             curl -sLo android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar || true
           fi
           chmod +x android/gradlew || true
-          if [ -n "$FLUTTER_ROOT" ]; then
-            echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          touch android/local.properties
+          if [ -n "$FLUTTER_ROOT" ] && ! grep -q "flutter.sdk" android/local.properties; then
+            echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
           fi
+          if [ -n "$ANDROID_HOME" ] && ! grep -q "sdk.dir" android/local.properties; then
+            echo "sdk.dir=$ANDROID_HOME" >> android/local.properties
+          fi
+          cat android/local.properties
 
       - name: Build Android APK (Release)
         run: |
