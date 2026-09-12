@@ -36,6 +36,8 @@ jobs:
         run: |
           yes | flutter doctor --android-licenses || true
           flutter doctor -v
+          echo "Installed NDKs:"
+          ls -la "$ANDROID_HOME/ndk" || true
 
       - name: Install Mobile Dependencies
         run: |

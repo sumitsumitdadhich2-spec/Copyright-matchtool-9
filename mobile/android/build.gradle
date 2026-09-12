@@ -19,11 +19,27 @@ subprojects {
 subprojects {
     afterEvaluate { project ->
         if (project.hasProperty('android')) {
-            try {
-                if (project.android.namespace == null) {
-                    project.android.namespace = project.group ?: "com.shiva.matchtool.${project.name.replaceAll('[^a-zA-Z0-9_]', '_')}"
+            def androidExtension = project.extensions.findByName('android')
+            if (androidExtension != null) {
+                def hasNamespace = false
+                try {
+                    def ns = androidExtension.namespace
+                    if (ns != null && !ns.toString().trim().isEmpty()) {
+                        hasNamespace = true
+                    }
+                } catch (Throwable ignored) {
+                    hasNamespace = false
                 }
-            } catch (Exception ignored) {
+                if (!hasNamespace) {
+                    try {
+                        def fallbackNamespace = project.group?.toString()?.trim()
+                        if (!fallbackNamespace || fallbackNamespace == 'unspecified') {
+                            fallbackNamespace = "com.shiva.matchtool.${project.name.replaceAll('[^a-zA-Z0-9_]', '_')}"
+                        }
+                        androidExtension.namespace = fallbackNamespace
+                    } catch (Throwable ignored) {
+                    }
+                }
             }
         }
     }

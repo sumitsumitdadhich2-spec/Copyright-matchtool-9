@@ -25,7 +25,25 @@ if (flutterVersionName == null) {
 android {
     namespace "com.shiva.matchtool"
     compileSdk = 35
-    ndkVersion = flutter.ndkVersion
+
+    def resolveNdkVersion = {
+        try {
+            def ndkDir = file("${android.sdkDirectory}/ndk")
+            if (ndkDir.exists()) {
+                def versions = ndkDir.list().findAll { !it.startsWith('.') }
+                if (versions != null && !versions.isEmpty()) {
+                    if (versions.contains(flutter.ndkVersion)) {
+                        return flutter.ndkVersion
+                    }
+                    versions.sort()
+                    return versions.last()
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return flutter.ndkVersion
+    }
+    ndkVersion = resolveNdkVersion()
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
