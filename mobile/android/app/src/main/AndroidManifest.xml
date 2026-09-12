@@ -1,5 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.shiva.matchtool">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Permissions for network and local media storage -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -20,7 +19,7 @@
         android:largeHeap="true">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.shiva.matchtool.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
